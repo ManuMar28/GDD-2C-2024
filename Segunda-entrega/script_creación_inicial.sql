@@ -1,3 +1,5 @@
+--CREACION DE TABLAS
+
 CREATE TABLE Provincias (
     id_provincia DECIMAL(18,0) PRIMARY KEY,
     Nombre_provincia NVARCHAR(25)
@@ -36,15 +38,15 @@ CREATE TABLE Clientes (
     Nombre_cliente NVARCHAR(50),
     Apellido NVARCHAR(30),
     Fecha_de_nacimiento DATE,
-    Dni VARCHAR(8),
-    Mail NVARCHAR(50)
+    Dni VARCHAR(8) UNIQUE,
+    Mail NVARCHAR(50) UNIQUE
 );
 
 CREATE TABLE Vendedores (
     id_vendedor DECIMAL(18,0) PRIMARY KEY,
     Razon_social NVARCHAR(50),
     Cuit VARCHAR(11),
-    Mail NVARCHAR(50)
+    Mail NVARCHAR(50) UNIQUE
 );
 
 CREATE TABLE Usuarios (
@@ -181,3 +183,290 @@ CREATE TABLE Publicaciones (
     CONSTRAINT id_usuario_vendedor FOREIGN KEY (id_usuario) REFERENCES Usuarioss(id_usuario),
     CONSTRAINT id_almacen FOREIGN KEY (id_almacen) REFERENCES Almacenes(id_almacen)
 );
+
+--TRIGGERS Y CONSTRAINTS
+
+CREATE PROCEDURE sp_ValidarDatos
+    @precio DECIMAL(18,2) = NULL,
+    @subtotal DECIMAL(18,2) = NULL,
+    @importe DECIMAL(18,2) = NULL,
+    @stock DECIMAL(18,0) = NULL,
+    @cantidad DECIMAL(18,0) = NULL,
+    @fecha_inicio DATE = NULL,
+    @fecha_fin DATE = NULL
+AS
+BEGIN
+    
+    IF @precio IS NOT NULL AND @precio <= 0
+    BEGIN
+        RAISERROR('El precio debe ser mayor que 0.', 16, 1);
+        RETURN;
+    END;
+
+    IF @subtotal IS NOT NULL AND @subtotal <= 0
+    BEGIN
+        RAISERROR('El subtotal debe ser mayor que 0.', 16, 1);
+        RETURN;
+    END;
+
+    IF @importe IS NOT NULL AND @importe <= 0
+    BEGIN
+        RAISERROR('El importe debe ser mayor que 0.', 16, 1);
+        RETURN;
+    END;
+
+    IF @stock IS NOT NULL AND @stock < 0
+    BEGIN
+        RAISERROR('El stock debe ser mayor que 0.', 16, 1);
+        RETURN;
+    END;
+
+    IF @cantidad IS NOT NULL AND @cantidad <= 0
+    BEGIN
+        RAISERROR('La cantidad debe ser mayor que 0.', 16, 1);
+        RETURN;
+    END;
+
+    IF @fecha_inicio IS NOT NULL AND @fecha_inicio > GETDATE()
+    BEGIN
+        RAISERROR('La fecha de inicio no puede ser mayor que la fecha actual.', 16, 1);
+        RETURN;
+    END;
+
+    IF @fecha_fin IS NOT NULL AND @fecha_fin > GETDATE()
+    BEGIN
+        RAISERROR('La fecha de fin no puede ser mayor que la fecha actual.', 16, 1);
+        RETURN;
+    END;
+END;
+
+CREATE TRIGGER trg_VerificarPublicaciones
+ON Publicaciones
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2),
+            @stock DECIMAL(18,0),
+            @fecha_inicio DATE,
+            @fecha_fin DATE;
+
+    SELECT @precio = Precio_unitario, 
+           @stock = Stock, 
+           @fecha_inicio = Fecha_inicio, 
+           @fecha_fin = Fecha_fin
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio, 
+        @stock = @stock, 
+        @fecha_inicio = @fecha_inicio, 
+        @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarAlmacenes
+ON Almacenes
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2);
+
+    SELECT @precio = Costo_diario, 
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio, 
+
+END;
+
+CREATE TRIGGER trg_VerificarClientes
+ON Clientes
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @fecha_fin DATE;
+
+    SELECT  @fecha_fin = Fecha_de_nacimiento
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarUsuarios
+ON Usuarios
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @fecha_fin DATE;
+
+    SELECT @fecha_fin = Fecha_creacion
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+         @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarConceptosFacturacion
+ON ConceptosFacturacion
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @cantidad;
+
+    SELECT @cantidad = Cantidad
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @cantidad = @cantidad;
+
+END;
+
+CREATE TRIGGER trg_VerificarDetallesFacturas
+ON DetallesFacturas
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2);
+
+    SELECT @precio = Precio
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio;
+
+END;
+
+CREATE TRIGGER trg_VerificarFacturas
+ON Facturas
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2),
+            @subtotal DECIMAL(18,2),
+            @importe DECIMAL(18,2),
+            @fecha_fin DATE;
+
+    SELECT @precio = Total_factura, 
+           @subtotal = Subtotal_factura, 
+           @importe = Importe_total, 
+           @fecha_fin = Fecha_emision
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio, 
+        @subtotal = @subtotal, 
+        @importe = @importe, 
+        @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarDetallesPagosTarjeta
+ON DetallesPagosTarjeta
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @cantidad DECIMAL(18,0),
+            @fecha_fin DATE;
+
+    SELECT @cantidad = Cant_cuotas, 
+           @fecha_fin = Fecha_vencimiento
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @cantidad = @cantidad, 
+        @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarPagos
+ON Pagos
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @importe DECIMAL(18,2),
+            @fecha_fin DATE;
+
+    SELECT @importe = Importe,  
+           @fecha_fin = Fecha_pago
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @importe = @importe, 
+        @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarDetallesVentas
+ON DetallesVentas
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2),
+            @cantidad DECIMAL(18,0),
+            @subtotal DECIMAL(18,2);
+
+    SELECT @precio = Precio, 
+           @cantidad = Cant_vendida,  
+           @subtotal = Subtotal
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio, 
+        @cantidad = @cantidad, 
+        @subtotal = @subtotal;
+
+END;
+
+CREATE TRIGGER trg_VerificarVentas
+ON Ventas
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2),
+            @fecha_fin DATE;
+
+    SELECT @precio = Total_venta, 
+           @fecha_fin = Fecha_hora_venta
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio, 
+        @fecha_fin = @fecha_fin;
+
+END;
+
+CREATE TRIGGER trg_VerificarEnvios
+ON Envios
+BEFORE INSERT, UPDATE
+AS
+BEGIN
+    
+    DECLARE @precio DECIMAL(18,2),
+            @fecha_inicio DATE,
+            @fecha_fin DATE;
+
+    SELECT @precio = Costo_envio, 
+           @fecha_inicio = Fecha_programada, 
+           @fecha_fin = Fecha_hora_entregado
+    FROM inserted;
+
+    EXEC sp_ValidarDatos 
+        @precio = @precio, 
+        @fecha_inicio = @fecha_inicio, 
+        @fecha_fin = @fecha_fin;
+
+END;

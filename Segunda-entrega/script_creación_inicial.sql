@@ -106,7 +106,7 @@ CREATE TABLE LOS_SUPERDATADOS.Vendedores
     id_vendedor DECIMAL(18,0) PRIMARY KEY IDENTITY(1,1), /*NO TENEMOS ID PARA LOS VENDEDORES POR LO QUE LE ASIGNAMOS UNO*/
     Razon_social NVARCHAR(50) NOT NULL,
     Cuit VARCHAR(12) NOT NULL,
-    Mail NVARCHAR(50) UNIQUE
+    Mail NVARCHAR(50)
 );
 
 CREATE TABLE LOS_SUPERDATADOS.Usuarios
@@ -163,9 +163,10 @@ CREATE TABLE LOS_SUPERDATADOS.Modelos
 
 CREATE TABLE LOS_SUPERDATADOS.Productos
 (
-    id_producto DECIMAL(18,0) PRIMARY KEY,
+    id_producto DECIMAL(18,0) PRIMARY KEY IDENTITY(1,1), /*NO TENEMOS ID PARA LOS PRODUCTOS POR LO QUE LE ASIGNAMOS UNO*/
     Codigo NVARCHAR(50) NOT NULL,
     Descripcion_producto NVARCHAR(255),
+	Precio_producto DECIMAL(18,2) NOT NULL, /*AGREGO PRECIO PRODUCTO*/
     id_modelo DECIMAL(18,0) NOT NULL,
     id_subrubro DECIMAL(18,0) NOT NULL,
     id_marca DECIMAL(18,0) NOT NULL,
@@ -181,20 +182,20 @@ CREATE TABLE LOS_SUPERDATADOS.Publicaciones
     Fecha_inicio DATE NOT NULL,
     Fecha_fin DATE NOT NULL,
     Stock DECIMAL(8,0) NOT NULL,
-    Precio_unitario DECIMAL(18,2) NOT NULL,
+	Precio_Unitario DECIMAL(18,2) NOT NULL,
     Costo_publicacion DECIMAL(18,2) NOT NULL,
     Comision_venta_ptge DECIMAL(18,2) NOT NULL,
     id_producto DECIMAL(18,0) NOT NULL,
-    id_usuario DECIMAL(18,0) NOT NULL,
+    id_usuario_vendedor DECIMAL(18,0) NOT NULL,
     id_almacen DECIMAL(18,0) NOT NULL,
     CONSTRAINT publicacion_id_producto FOREIGN KEY (id_producto) REFERENCES LOS_SUPERDATADOS.Productos(id_producto),
-    CONSTRAINT publicacion_id_usuario_vendedor FOREIGN KEY (id_usuario) REFERENCES LOS_SUPERDATADOS.Usuarios(id_usuario),
+    CONSTRAINT publicacion_id_usuario_vendedor FOREIGN KEY (id_usuario_vendedor) REFERENCES LOS_SUPERDATADOS.Usuarios(id_usuario),
     CONSTRAINT publicacion_id_almacen FOREIGN KEY (id_almacen) REFERENCES LOS_SUPERDATADOS.Almacenes(id_almacen)
 );
 
 CREATE TABLE LOS_SUPERDATADOS.DetallesFacturas
 (
-    id_detalle_factura DECIMAL(18,0) PRIMARY KEY,
+    id_detalle_factura DECIMAL(18,0) PRIMARY KEY IDENTITY(1,1),
     Precio DECIMAL(18,2) NOT NULL,
     id_publicacion DECIMAL(18,0) NOT NULL,
     CONSTRAINT detalle_factura_id_publicacion FOREIGN KEY (id_publicacion) REFERENCES LOS_SUPERDATADOS.Publicaciones(id_publicacion)
@@ -363,22 +364,18 @@ AS
 BEGIN
 
     DECLARE @precio DECIMAL(18,2),
-            @stock DECIMAL(18,0),
-            @fecha_inicio DATE,
-            @fecha_fin DATE;
+            @stock DECIMAL(18,0)
 
     BEGIN TRY
-		SELECT @precio = Precio_unitario,
-        @stock = Stock,
-        @fecha_inicio = Fecha_inicio,
-        @fecha_fin = Fecha_fin
+		SELECT @precio = Costo_publicacion,
+        @stock = Stock
+
     FROM inserted;
 
 		EXEC LOS_SUPERDATADOS.sp_ValidarDatos 
 			@precio = @precio, 
-			@stock = @stock, 
-			@fecha_inicio = @fecha_inicio, 
-			@fecha_fin = @fecha_fin;
+			@stock = @stock
+		
 	END TRY
 	BEGIN CATCH
         ROLLBACK TRANSACTION;
@@ -702,22 +699,6 @@ GO
 
 -- EJECUTAR MIGRACION DE DATOS
 GO
-CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarModelos
-AS
-BEGIN
-    INSERT INTO LOS_SUPERDATADOS.Modelos
-        (id_modelo, Descripcion_modelo)
-    SELECT DISTINCT(PRODUCTO_MOD_CODIGO), PRODUCTO_MOD_DESCRIPCION
-    FROM GD2C2024.gd_esquema.Maestra
-    WHERE PRODUCTO_MOD_CODIGO IS NOT NULL AND PRODUCTO_MOD_DESCRIPCION IS NOT NULL;
-END;
-GO
-EXEC LOS_SUPERDATADOS.sp_MigrarModelos
-GO
-
-
-
-GO
 CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigracionProvincias
 AS
 BEGIN
@@ -926,3 +907,259 @@ END;
 GO
 EXEC LOS_SUPERDATADOS.sp_MigrarUsuarios
 GO
+
+GO
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarDomicilios
+as
+begin
+-- INSERT DE LOS CLIENTES
+insert into LOS_SUPERDATADOS.Domicilios
+		(id_usuario, id_ubicacion)
+		select distinct Us.id_usuario , Ub.id_ubicacion
+		from [GD2C2024].[gd_esquema].[Maestra] as M
+		join LOS_SUPERDATADOS.Clientes as C
+		ON
+			M.CLIENTE_NOMBRE = C.Nombre_cliente and
+			M.CLIENTE_APELLIDO = C.Apellido and
+			M.CLIENTE_DNI = C.Dni and
+			M.CLIENTE_FECHA_NAC = C.Fecha_de_nacimiento and
+			M.CLIENTE_MAIL = C.Mail
+		join LOS_SUPERDATADOS.Ubicaciones as Ub
+		ON
+			M.CLI_USUARIO_DOMICILIO_CALLE = Ub.Calle and
+			M.CLI_USUARIO_DOMICILIO_NRO_CALLE = Ub.Numero and
+			M.CLI_USUARIO_DOMICILIO_DEPTO = Ub.Departamento and
+			M.CLI_USUARIO_DOMICILIO_CP = Ub.Codigo_postal and
+			M.CLI_USUARIO_DOMICILIO_PISO = Ub.Piso
+		join LOS_SUPERDATADOS.Localidades as L
+		ON
+			M.CLI_USUARIO_DOMICILIO_LOCALIDAD = L.Nombre_localidad and
+			Ub.id_localidad = L.id_localidad
+		join LOS_SUPERDATADOS.Provincias as P
+		ON
+			M.CLI_USUARIO_DOMICILIO_PROVINCIA = P.Nombre_provincia and
+			L.id_provincia = P.id_provincia
+		join LOS_SUPERDATADOS.Usuarios as Us
+		ON
+			M.CLI_USUARIO_NOMBRE = Us.Nombre_usuario and
+			M.CLI_USUARIO_PASS = Us.pass_usuario and
+			M.CLI_USUARIO_FECHA_CREACION = Us.Fecha_creacion and
+			C.id_cliente = Us.id_cliente;
+
+-- INSERT DE LOS VENDEDORES
+insert into LOS_SUPERDATADOS.Domicilios
+		(id_usuario, id_ubicacion)
+		select distinct Us.id_usuario , Ub.id_ubicacion
+		from [GD2C2024].[gd_esquema].[Maestra] as M
+		join LOS_SUPERDATADOS.Vendedores as V
+		ON
+			M.VENDEDOR_RAZON_SOCIAL = V.Razon_social and
+			M.VENDEDOR_CUIT = V.Cuit and
+			M.VENDEDOR_MAIL = V.Mail
+		join LOS_SUPERDATADOS.Ubicaciones as Ub
+		ON
+			M.VEN_USUARIO_DOMICILIO_CALLE = Ub.Calle and
+			M.VEN_USUARIO_DOMICILIO_NRO_CALLE = Ub.Numero and
+			M.VEN_USUARIO_DOMICILIO_DEPTO = Ub.Departamento and
+			M.VEN_USUARIO_DOMICILIO_CP = Ub.Codigo_postal and
+			M.VEN_USUARIO_DOMICILIO_PISO = Ub.Piso
+		join LOS_SUPERDATADOS.Localidades as L
+		ON
+			M.VEN_USUARIO_DOMICILIO_LOCALIDAD = L.Nombre_localidad and
+			Ub.id_localidad = L.id_localidad
+		join LOS_SUPERDATADOS.Provincias as P
+		ON
+			M.VEN_USUARIO_DOMICILIO_PROVINCIA = P.Nombre_provincia and
+			L.id_provincia = P.id_provincia
+		join LOS_SUPERDATADOS.Usuarios as Us
+		ON
+
+			M.VEN_USUARIO_NOMBRE = Us.Nombre_usuario and
+			M.VEN_USUARIO_PASS = Us.pass_usuario and
+			M.VEN_USUARIO_FECHA_CREACION = Us.Fecha_creacion and
+			V.id_vendedor = Us.id_vendedor;
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarDomicilios
+GO
+
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarRubros
+as
+begin
+	insert into LOS_SUPERDATADOS.Rubros
+		(Nombre_rubro)
+	select distinct PRODUCTO_RUBRO_DESCRIPCION
+	from [GD2C2024].[gd_esquema].[Maestra]
+	where PRODUCTO_RUBRO_DESCRIPCION is not null;
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarRubros
+GO
+
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarSubRubros
+as
+begin
+	insert into LOS_SUPERDATADOS.SubRubros
+		(Nombre_subrubro, id_rubro)
+	select distinct M.PRODUCTO_SUB_RUBRO, R.id_rubro
+	from [GD2C2024].[gd_esquema].[Maestra] as M
+	join LOS_SUPERDATADOS.Rubros AS R
+	ON
+		M.PRODUCTO_RUBRO_DESCRIPCION = R.Nombre_rubro
+	where PRODUCTO_SUB_RUBRO is not null;
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarSubRubros
+GO
+
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarMarcas
+as
+begin
+	insert into LOS_SUPERDATADOS.Marcas
+		(Nombre_marca)
+	select distinct M.PRODUCTO_MARCA 
+	from [GD2C2024].[gd_esquema].[Maestra] as M
+	where M.PRODUCTO_MARCA is not null
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarMarcas
+GO
+
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarModelos
+as
+begin
+	insert into LOS_SUPERDATADOS.Modelos
+		(id_modelo, Descripcion_modelo)
+	select distinct M.PRODUCTO_MOD_CODIGO, M.PRODUCTO_MOD_DESCRIPCION
+	from [GD2C2024].[gd_esquema].[Maestra] as M
+	where M.PRODUCTO_MOD_CODIGO is not null
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarModelos
+GO
+
+GO
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarProductos
+AS 
+BEGIN
+	INSERT INTO  LOS_SUPERDATADOS.Productos
+		(Codigo, Descripcion_producto, Precio_producto, id_modelo, id_subrubro, id_marca)
+	SELECT DISTINCT O.PRODUCTO_CODIGO, O.PRODUCTO_DESCRIPCION, O.PRODUCTO_PRECIO, mo.id_modelo, s.id_subrubro, ma.id_marca
+	FROM GD2C2024.gd_esquema.Maestra AS O
+	INNER JOIN LOS_SUPERDATADOS.Modelos AS mo
+	ON 
+	mo.id_modelo = O.PRODUCTO_MOD_CODIGO
+	AND mo.Descripcion_modelo = O.PRODUCTO_MOD_DESCRIPCION
+	INNER JOIN LOS_SUPERDATADOS.Rubros AS r
+	ON
+	r.Nombre_rubro = O.PRODUCTO_RUBRO_DESCRIPCION
+	INNER JOIN LOS_SUPERDATADOS.SubRubros AS s
+	ON
+	s.id_rubro = r.id_rubro
+	AND s.Nombre_subrubro = O.PRODUCTO_SUB_RUBRO
+	INNER JOIN LOS_SUPERDATADOS.Marcas AS ma
+	ON
+	ma.Nombre_marca = O.PRODUCTO_MARCA
+
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarProductos
+GO
+
+GO
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarPublicaciones
+AS
+BEGIN
+    insert into LOS_SUPERDATADOS.Publicaciones
+        (id_publicacion,
+        Descripcion_publicacion,
+        Fecha_inicio,
+        Fecha_fin,
+        Stock,
+        Precio_Unitario,
+        Costo_publicacion,
+        Comision_venta_ptge,
+        id_producto,
+        id_usuario_vendedor,
+        id_almacen)
+    select distinct M.PUBLICACION_CODIGO,
+                    M.PUBLICACION_DESCRIPCION,
+                    M.PUBLICACION_FECHA,
+                    M.PUBLICACION_FECHA_V,
+                    M.PUBLICACION_STOCK,
+                    M.PUBLICACION_PRECIO,
+                    M.PUBLICACION_COSTO,
+                    M.PUBLICACION_PORC_VENTA,
+					P.id_producto,
+					Us.id_usuario,
+					A.id_almacen
+    from [GD2C2024].[gd_esquema].[Maestra] AS M
+    JOIN LOS_SUPERDATADOS.Productos AS P
+    ON 
+		M.PRODUCTO_CODIGO = P.Codigo and
+		M.PRODUCTO_DESCRIPCION = P.Descripcion_producto and
+		M.PRODUCTO_PRECIO = p.Precio_producto
+	JOIN LOS_SUPERDATADOS.Marcas AS Ma
+	ON
+		M.PRODUCTO_MARCA = Ma.Nombre_marca and
+		P.id_marca = Ma.id_marca
+	join LOS_SUPERDATADOS.Modelos Mo
+	ON
+		M.PRODUCTO_MOD_CODIGO = Mo.id_modelo and
+		M.PRODUCTO_MOD_DESCRIPCION = Mo.Descripcion_modelo
+	join LOS_SUPERDATADOS.SubRubros as SubR
+	ON
+		M.PRODUCTO_SUB_RUBRO = SubR.Nombre_subrubro
+	join LOS_SUPERDATADOS.Rubros as Ru
+	ON
+		M.PRODUCTO_RUBRO_DESCRIPCION = Ru.Nombre_rubro and
+		SubR.id_rubro = Ru.id_rubro
+    JOIN LOS_SUPERDATADOS.Usuarios AS us
+    ON
+    M.VEN_USUARIO_NOMBRE = us.Nombre_usuario
+	AND M.VEN_USUARIO_PASS = us.pass_usuario
+	AND us.Fecha_creacion = M.VEN_USUARIO_FECHA_CREACION
+	JOIN LOS_SUPERDATADOS.Vendedores AS V
+	ON
+	V.id_vendedor = us.id_vendedor
+	JOIN LOS_SUPERDATADOS.Ubicaciones AS ub
+	ON
+	M.ALMACEN_CALLE = ub.Calle and
+	M.ALMACEN_NRO_CALLE = ub.Numero
+	join LOS_SUPERDATADOS.Localidades as Lo
+	ON
+	M.ALMACEN_Localidad = Lo.Nombre_localidad
+	join LOS_SUPERDATADOS.Provincias as Pr
+	ON
+	M.ALMACEN_PROVINCIA = Pr.Nombre_provincia and
+	Lo.id_provincia = Pr.id_provincia
+	JOIN LOS_SUPERDATADOS.Almacenes AS a
+	ON
+	a.id_ubicacion = ub.id_ubicacion
+WHERE
+	VENDEDOR_RAZON_SOCIAL is not null and
+	PUBLICACION_CODIGO is not null and
+	PRODUCTO_CODIGO is not null and
+	ALMACEN_CODIGO is not null
+END;
+
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarPublicaciones
+GO
+
+GO
+CREATE PROCEDURE LOS_SUPERDATADOS.sp_MigrarDetallesFacturas
+AS
+BEGIN
+	INSERT INTO LOS_SUPERDATADOS.DetallesFacturas
+		(Precio, id_publicacion)
+	SELECT DISTINCT O.FACTURA_DET_PRECIO, p.id_publicacion
+	FROM GD2C2024.gd_esquema.Maestra AS O
+	INNER JOIN LOS_SUPERDATADOS.Publicaciones AS p
+	ON
+	p.Precio_unitario = O.FACTURA_DET_PRECIO
+END;
+GO
+EXEC LOS_SUPERDATADOS.sp_MigrarDetallesFacturas
+GO
+
